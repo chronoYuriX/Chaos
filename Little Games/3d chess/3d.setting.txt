@@ -1,0 +1,208 @@
+--3d.setting.txt
+--
+--Overall settings
+CONST INT window_x | 700
+CONST INT window_y | 450
+CONST FLOAT magnify | 1.5
+CONST FLOAT range | 1000.0
+CONST FLOAT bglight | 0.3
+CONST FLOAT cam_angle | +0.196
+CONST FLOAT cam_pitch | -0.785
+EXPR bgcolor (70,70,70)
+EXPR light ((1,-4,2,1),(-1,0,0,0.1))
+--
+--Chessboard floor settings
+EXPR board_floor_0 (+150,100,-170)
+EXPR board_floor_1 (-150,100,-170)
+EXPR board_floor_2 (-150,100,+170)
+EXPR board_floor_3 (+150,100,+170)
+EXPR board_floor_color (200,200,200)
+--
+--Chessboard surface settings
+--top
+EXPR board_top_0 (+100,0,-100)
+EXPR board_top_1 (-100,0,-100)
+EXPR board_top_2 (-100,0,+100)
+EXPR board_top_3 (+100,0,+100)
+EXPR board_top_color (255,255,100)
+--front
+EXPR board_front_0 (-100,0,-100)
+EXPR board_front_1 (-100,100,-100)
+EXPR board_front_2 (+100,100,-100)
+EXPR board_front_3 (+100,0,-100)
+EXPR board_front_color (255,255,100)
+--right
+EXPR board_right_0 (+100,0,+100)
+EXPR board_right_1 (+100,100,+100)
+EXPR board_right_2 (+100,100,-100)
+EXPR board_right_3 (+100,0,-100)
+EXPR board_right_color (255,255,100)
+--left
+EXPR board_left_0 (-100,0,-100)
+EXPR board_left_1 (-100,100,-100)
+EXPR board_left_2 (-100,100,+100)
+EXPR board_left_3 (-100,0,+100)
+EXPR board_left_color (255,255,100)
+--back
+EXPR board_back_0 (-100,100,+100)
+EXPR board_back_1 (-100,0,+100)
+EXPR board_back_2 (+100,0,+100)
+EXPR board_back_3 (+100,100,+100)
+EXPR board_back_color (255,255,100)
+--
+--Chessboard texture settings
+--VL
+EXPR VL00 (-71,0,-91)
+EXPR VL01 (-73,0,-91)
+EXPR VL02 (-73,0,+91)
+EXPR VL03 (-71,0,+91)
+EXPR VL10 (-53,0,-91)
+EXPR VL11 (-55,0,-91)
+EXPR VL12 (-55,0,+91)
+EXPR VL13 (-53,0,+91)
+EXPR VL20 (-35,0,-91)
+EXPR VL21 (-37,0,-91)
+EXPR VL22 (-37,0,+91)
+EXPR VL23 (-35,0,+91)
+--VM
+EXPR VM00 (-17,0,-91)
+EXPR VM01 (-19,0,-91)
+EXPR VM02 (-19,0,+91)
+EXPR VM03 (-17,0,+91)
+EXPR VM10 (+1,0,-91)
+EXPR VM11 (-1,0,-91)
+EXPR VM12 (-1,0,+91)
+EXPR VM13 (+1,0,+91)
+EXPR VM20 (+19,0,-91)
+EXPR VM21 (+17,0,-91)
+EXPR VM22 (+17,0,+91)
+EXPR VM23 (+19,0,+91)
+--VR
+EXPR VR00 (+37,0,-91)
+EXPR VR01 (+35,0,-91)
+EXPR VR02 (+35,0,+91)
+EXPR VR03 (+37,0,+91)
+EXPR VR10 (+55,0,-91)
+EXPR VR11 (+53,0,-91)
+EXPR VR12 (+53,0,+91)
+EXPR VR13 (+55,0,+91)
+EXPR VR20 (+73,0,-91)
+EXPR VR21 (+71,0,-91)
+EXPR VR22 (+71,0,+91)
+EXPR VR23 (+73,0,+91)
+--HF
+EXPR HF00 (+71,0,-91)
+EXPR HF01 (-71,0,-91)
+EXPR HF02 (-71,0,-89)
+EXPR HF03 (+71,0,-89)
+EXPR HF10 (+71,0,-71)
+EXPR HF11 (-71,0,-71)
+EXPR HF12 (-71,0,-69)
+EXPR HF13 (+71,0,-69)
+EXPR HF20 (+71,0,-51)
+EXPR HF21 (-71,0,-51)
+EXPR HF22 (-71,0,-49)
+EXPR HF23 (+71,0,-49)
+--HC
+EXPR HC00 (+71,0,-31)
+EXPR HC01 (-71,0,-31)
+EXPR HC02 (-71,0,-29)
+EXPR HC03 (+71,0,-29)
+EXPR HC10 (+71,0,-11)
+EXPR HC11 (-71,0,-11)
+EXPR HC12 (-71,0,-9)
+EXPR HC13 (+71,0,-9)
+EXPR HC20 (+71,0,+9)
+EXPR HC21 (-71,0,+9)
+EXPR HC22 (-71,0,+11)
+EXPR HC23 (+71,0,+11)
+EXPR HC30 (+71,0,+29)
+EXPR HC31 (-71,0,+29)
+EXPR HC32 (-71,0,+31)
+EXPR HC33 (+71,0,+31)
+--HB
+EXPR HB00 (+71,0,+49)
+EXPR HB01 (-71,0,+49)
+EXPR HB02 (-71,0,+51)
+EXPR HB03 (+71,0,+51)
+EXPR HB10 (+71,0,+69)
+EXPR HB11 (-71,0,+69)
+EXPR HB12 (-71,0,+71)
+EXPR HB13 (+71,0,+71)
+EXPR HB20 (+71,0,+89)
+EXPR HB21 (-71,0,+89)
+EXPR HB22 (-71,0,+91)
+EXPR HB23 (+71,0,+91)
+--ALL
+EXPR MASK0 (+60,0,-8)
+EXPR MASK1 (-60,0,-8)
+EXPR MASK2 (-60,0,+8)
+EXPR MASK3 (+60,0,+8)
+EXPR board_texture_color (0,0,0)
+--
+--Chessboard pieces settings
+--top
+EXPR pieces_top_0 (+7,-4,-7)
+EXPR pieces_top_1 (-7,-4,-7)
+EXPR pieces_top_2 (-7,-4,+7)
+EXPR pieces_top_3 (+7,-4,+7)
+EXPR pieces_top_color (200,200,50)
+--front
+EXPR pieces_front_0 (-7,-4,-7)
+EXPR pieces_front_1 (-7,0,-7)
+EXPR pieces_front_2 (+7,0,-7)
+EXPR pieces_front_3 (+7,-4,-7)
+EXPR pieces_front_color (200,200,50)
+--right
+EXPR pieces_right_0 (+7,-4,+7)
+EXPR pieces_right_1 (+7,0,+7)
+EXPR pieces_right_2 (+7,0,-7)
+EXPR pieces_right_3 (+7,-4,-7)
+EXPR pieces_right_color (200,200,50)
+--left
+EXPR pieces_left_0 (-7,-4,-7)
+EXPR pieces_left_1 (-7,0,-7)
+EXPR pieces_left_2 (-7,0,+7)
+EXPR pieces_left_3 (-7,-4,+7)
+EXPR pieces_left_color (200,200,50)
+--back
+EXPR pieces_back_0 (-7,0,+7)
+EXPR pieces_back_1 (-7,-4,+7)
+EXPR pieces_back_2 (+7,-4,+7)
+EXPR pieces_back_3 (+7,0,+7)
+EXPR pieces_back_color (200,200,50)
+--ALL
+CONST INT pieces_magnify_x | 18
+CONST INT pieces_magnify_z | 20
+CONST INT pieces_add_x | -90
+CONST INT pieces_add_z | -90
+--
+--Chinese chars settings
+--overall
+CONST INT col | 11
+CONST INT lin | 11
+CONST INT shift_x | 5
+CONST INT shift_z | 5
+CONST INT total_y | -4
+CONST INT pixel_size | 1
+EXPR full_A (255,0,0)
+EXPR half_A (228,100,25)
+EXPR void_A (200,200,50)
+EXPR full_B (0,0,0)
+EXPR half_B (100,100,25)
+EXPR void_B (200,200,50)
+--single chars
+CONST STR jiang | ---*--*+------*-*+--*--*-*-*****--+***+*+*-----*+-***+---+****-**+-+**--*****+*-*-**-*-----*----*-----*--+**-------------
+CONST STR shuai | ---*---*------*---*----*-*-*****--*-*-*-*-*--*-*-*-*-*--*-*-*-*-*--*-*-*-*-*----*-*-***---*+---*----*+----*--------------
+CONST STR bing | --------*-----*****+-----*----------*******----*---*------*---*----**********----*+-*+-----*+--+**--**+-----*+-----------
+CONST STR zu | -----*+-----+********----+*--*+-----*+*+*-----+**+*-*---+*--*+-*+-+**********-----*+---------*+---------*+---------------
+CONST STR paoA | --*---*+-----*--*+------********-*-****---*-+**--***-*--+*--*-*-*---**-**+-*---*+**-+**+-+*--*----*+*---******-----------
+CONST STR paoB | ------+*---+****-*+-----*+--*****--*--+----*--******--*-**-*-*-*-**-*-*-**+-*--*-*-*-**+--***-*---*------*****-----------
+CONST STR che | -----*+--------*+---+--*********----*+*+------*+-*+--+---********------*+----***********-----*+---------*+---------------
+CONST STR jv | ----*+---------*+---+-+********+--*+-*+-**---********---*+-*+-**---********+-----*+-----***********----*+---------*+-----
+CONST STR maA | ------+*----*******-----*+--*+-----*+--*+-----*+--*+-----*******+----------*+********-*+---------*+-----****+------------
+CONST STR maB | -*-----+*---********+--********---*+--*+-----********---*+--*+-----********+--*+*+*+*+*+-*-*-*-+-*+-+-+-+--*+-----****+--
+CONST STR xiangA | --*----------*--*****---*--*---*-******---*--+*+-*****-+***+*---*-*-*-******-+-*--*---*---*--*---*---*--*****------------
+CONST STR xiangB | ---*+--------*+--------********--*+*--*--*----******+----+*+*+**---**+***-----*******----*+*-*-+**-***-**---+*-----------
+CONST STR shiA | ---------------*+---------*+---------*+---------*+--+***********+----*+---------*+---------*+------********-------------
+CONST STR shiB | --+*--*-----+*---*-----**---*-----**---*--+-+*********+*-*---*------*---*------*---*------*---*--+---********+-----------

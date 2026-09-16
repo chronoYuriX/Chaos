@@ -1,0 +1,10 @@
+--config.setting.txt
+CONST INT width | 9
+CONST INT length | 10
+CONST INT river | 4
+CONST INT void | 0
+EXPR check_stumbling_horse True
+EXPR check_stumbling_vizier True
+EXPR players (1,2)
+CONST STR mode | pvp
+CONST FLOAT range | 8

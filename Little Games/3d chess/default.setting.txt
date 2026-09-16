@@ -1,0 +1,7 @@
+--default.setting.txt
+CONST INT A | 12
+CONST FLOAT B | 3.14
+CONST STR C | string
+FUNK D function()
+EXPR E 1+2+3
+EXEC print('DefaultSettings')
