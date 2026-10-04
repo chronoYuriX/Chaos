@@ -1,3 +1,186 @@
+#ifndef _WINDOWS_
+	#define WIN32_LEAN_AND_MEAN
+	#define NOMINMAX
+    #define UNICODE
+	#include <windows.h>
+#endif
+#include <mmsystem.h>
+#include <gl/gl.h>
+#include <gl/glu.h>
+#include <stdint.h>
+#include "non-crt-math.cpp"
+#if defined(__SSE__)
+	inline float hardware_sqrt(float x) {
+    	float result;
+    	asm volatile (
+        	"sqrtss %1, %0"
+        	: "=x" (result)
+        	: "x" (x)
+    	);
+    	return result;
+	}
+#endif
+#include "io.cpp" // debug
+
+#pragma comment(lib, "kernel32.lib")
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "opengl32.lib")
+#pragma comment(lib, "glu32.lib")
+#pragma comment(lib, "winmm.lib")
+
+
+HANDLE _g_hheap = GetProcessHeap();
+DEBUG_OUTPUT _g_debug(1024);
+
+template <typename TYPE_ELEMENT>
+struct LIST {
+	TYPE_ELEMENT* elements;
+	size_t        storage_counter, max_storage;
+	float         expansion;
+	HANDLE        hheap;
+	static constexpr float  DEFAULT_EXPANSION = 1.5f;
+	static constexpr size_t DEFAULT_STORAGE = 64;
+	LIST(size_t _max_storage = 0, float _expansion = 0.f, HANDLE _hheap = NULL):
+			max_storage((_max_storage == 0) ? DEFAULT_STORAGE : _max_storage),
+			expansion  ((_expansion <= 1.f) ? DEFAULT_EXPANSION : _expansion),
+			hheap      ((_hheap == nullptr) ? GetProcessHeap() : _hheap) {
+		elements = (TYPE_ELEMENT*)HeapAlloc(hheap, 0, max_storage * sizeof(TYPE_ELEMENT));
+		cleanup();
+	}
+	~LIST() {
+		if (elements != nullptr) HeapFree(hheap, 0, elements);
+		elements = nullptr;
+	}
+	void append_p(TYPE_ELEMENT* pelement) {
+		memcpy(elements + storage_counter, pelement, sizeof(TYPE_ELEMENT));
+		storage_counter++;
+	}
+	inline void append(TYPE_ELEMENT element) { append_p(&element); }
+	void resize(size_t max_storage_new) {
+		if (max_storage_new != max_storage) {
+			max_storage = max_storage_new;
+			elements = (TYPE_ELEMENT*)HeapReAlloc(hheap, 0, elements, max_storage * sizeof(TYPE_ELEMENT));
+		}
+	}
+	void expand() {
+		size_t max_storage_new = max_storage * expansion;
+		if (max_storage_new == max_storage) max_storage_new++;
+		resize(max_storage_new);
+	}
+	void expand_to(size_t min_storage) {
+		while (max_storage < min_storage) {
+			size_t max_storage_temp = max_storage * expansion;
+			if (max_storage_temp == max_storage) max_storage_temp++;
+			max_storage = max_storage_temp;
+		}
+		elements = (TYPE_ELEMENT*)HeapReAlloc(hheap, 0, elements, max_storage * sizeof(TYPE_ELEMENT));
+	}
+	inline void cleanup() { storage_counter = 0; }
+};
+
+template <typename TYPE_KEY, typename TYPE_VAL>
+struct DICT_ENTRY {
+	TYPE_KEY key;
+	TYPE_VAL val;
+	uint8_t  state;
+	DICT_ENTRY<TYPE_KEY, TYPE_VAL>* previous;
+	static constexpr uint8_t FREE = 1, OCCUPIED = 2, DELETED = 3;
+};
+template <typename TYPE_KEY, typename TYPE_VAL>
+using DICT_ENUM_FUNC = bool (*)(DICT_ENTRY<TYPE_KEY, TYPE_VAL>*, void*);
+template <typename TYPE_KEY, typename TYPE_VAL>
+struct DICT {
+	#define ENTRY DICT_ENTRY<TYPE_KEY, TYPE_VAL>
+	size_t    storage_counter,  max_storage;
+	ENTRY    *entries,         *last_entry;
+	float     expansion,        load_factor;
+	HANDLE    hheap;
+	static constexpr float DEFAULT_LOAD_FACTOR = .5f;
+	static constexpr bool  ENUM_CONTINUE = false, ENUM_FINISH = true;
+	DICT(size_t _max_storage = 0, float _expansion = 0.f, float _load_factor = 0.f, HANDLE _hheap = NULL):
+			max_storage((_max_storage == 0) ? LIST<ENTRY>::DEFAULT_STORAGE : _max_storage),
+			expansion  ((_expansion <= 1.f) ? LIST<ENTRY>::DEFAULT_EXPANSION : _expansion),
+			load_factor((_load_factor > 1.f || _load_factor <= 0.f) ? DEFAULT_LOAD_FACTOR : _load_factor),
+			hheap      ((_hheap == nullptr) ? GetProcessHeap() : _hheap) {
+		entries = (ENTRY*)HeapAlloc(hheap, 0, max_storage * sizeof(ENTRY));
+		cleanup();
+	}
+	~DICT() {
+		if (entries != nullptr) HeapFree(hheap, 0, entries);
+		entries = nullptr;
+	}
+	uint64_t _hash(const TYPE_KEY key) {
+		uint64_t result = 14695981039346656037ULL;
+		const uint8_t* key_bytes = (uint8_t*)&key;
+		for (size_t i = 0; i < sizeof(key); i++) result = (result ^ key_bytes[i]) * 1099511628211ULL;
+		return result % max_storage;
+	}
+	void set(const TYPE_KEY key, const TYPE_VAL val) {
+		TYPE_VAL* target = get(key);
+		if (target == nullptr) {
+			if (storage_counter >= max_storage * load_factor) rebuild();
+			uint64_t dest = _hash(key);
+			while (entries[dest].state == ENTRY::OCCUPIED) dest = (dest + 1) % max_storage;
+			ENTRY* current_entry = entries + dest;
+			current_entry->previous = last_entry;
+			current_entry->key = key;
+			current_entry->val = val;
+			current_entry->state = ENTRY::OCCUPIED;
+			last_entry = current_entry;
+			storage_counter++;
+		} else *target = val;
+	}
+	ENTRY* get_entry(const TYPE_KEY key) {
+		uint64_t dest = _hash(key); uint64_t start = dest;
+		while (entries[dest].state != ENTRY::FREE) {
+			if (entries[dest].key == key) {
+				if (entries[dest].state == DICT_ENTRY<TYPE_KEY, TYPE_VAL>::OCCUPIED) return entries + dest;
+				break;
+			}
+			dest = (dest + 1) % max_storage;
+			if (dest == start) break;
+		}
+		return nullptr;
+	}
+	inline TYPE_VAL* get(const TYPE_KEY key) {
+		ENTRY* target = get_entry(key);
+		return (target == nullptr) ? nullptr : &(target->val);
+	}
+	void remove(const TYPE_KEY key) {
+		ENTRY* target = get_entry(key);
+		if (target != nullptr) target->state = ENTRY::DELETED;
+	}
+	void cleanup() {
+		last_entry = nullptr;
+		storage_counter = 0;
+		for (size_t i = 0; i < max_storage; i++) entries[i].state = ENTRY::FREE;
+	}
+	void rebuild() {
+		size_t max_storage_copy = max_storage;
+		while (storage_counter >= max_storage * load_factor) {
+			size_t max_storage_new = max_storage * expansion;
+			if (max_storage_new == max_storage) max_storage_new++;
+			max_storage = max_storage_new;
+		}
+		ENTRY *entries_new = (ENTRY*)HeapAlloc(hheap, 0, max_storage * sizeof(ENTRY)), *entries_copy = entries;
+		entries = entries_new;
+		cleanup();
+		for (size_t i = 0; i < max_storage_copy; i++)
+			if (entries_copy[i].state == ENTRY::OCCUPIED) set(entries_copy[i].key, entries_copy[i].val);
+		HeapFree(hheap, 0, entries_copy);
+	}
+	void enum_entries(DICT_ENUM_FUNC<TYPE_KEY, TYPE_VAL> enum_func, void* param) {
+		ENTRY* current_entry = last_entry;
+		while (current_entry != nullptr) {
+			if (current_entry->state == ENTRY::OCCUPIED)
+				if (enum_func(current_entry, param) == ENUM_FINISH) return;
+			current_entry = current_entry->previous;
+		}
+	}
+	#undef ENTRY
+};
+
 typedef struct float2D {
 	float x, y;
 	constexpr float2D(float _x, float _y): x(_x), y(_y) { }
@@ -34,7 +217,7 @@ typedef struct float4D {
     	matrix[8] =     2 * (xz + wy); matrix[9] =     2 * (yz - wx); matrix[10] = 1 - 2 * (xx + yy); matrix[11] = 0; // (0, 2)
     	matrix[12] = 0; matrix[13] = 0; matrix[14] = 0; matrix[15] = 1;
 	}
-	float magnitude() const { return NCM::hardware_sqrt(w * w + x * x + y * y + z * z); }
+	float magnitude() const { return hardware_sqrt(w * w + x * x + y * y + z * z); }
 	float4D align1() const {
         float mag = magnitude();
         if (mag > NCM::ERR) {
@@ -68,7 +251,7 @@ constexpr COLORREF gradientRGB(uint16_t hue) {
 		case 4: return RGB(      LOBYTE(hue),               000,               255);
 		case 5: return RGB(              255,               000, 255 - LOBYTE(hue));
 	}
-	return (COLORREF)0;
+	return COLORREF{ 0 };
 };
 constexpr COLORREF gradientRGB(float hue) { return gradientRGB(uint16_t(1536.f * hue)); }
 
@@ -143,6 +326,7 @@ struct GL_CHARSET {
 		scan_cycle = (_char_lifespan == ETERNAL_LIFE) ? NEVER_SCAN : _scan_cycle;
 	}
 	static bool enum_deconstruct(DICT_ENTRY<wchar_t, GL_CHAR*>* current_entry, void* ) {
+		_g_debug << L"Delete: " << current_entry->key << _g_debug.endl;
 		delete current_entry->val;
 		return DICT<wchar_t, GL_CHAR*>::ENUM_CONTINUE;
 	}
@@ -150,6 +334,7 @@ struct GL_CHARSET {
 		if (++current_entry->val->age >= *(uint16_t*)plifespan) {
 			delete current_entry->val;
 			current_entry->state = DICT_ENTRY<wchar_t, GL_CHAR*>::DELETED;
+			_g_debug << L"Delete: " << current_entry->key << _g_debug.endl;
 		}
 		return DICT<wchar_t, GL_CHAR*>::ENUM_CONTINUE;
 	}
@@ -161,6 +346,7 @@ struct GL_CHARSET {
 		}
 		GL_CHAR** result = chars.get(key);
 		if (result == nullptr) {
+			_g_debug << L"New texture: " << key << _g_debug.endl;
 			GL_CHAR* corresponding_char = new GL_CHAR(key, htextDC);
 			chars.set(key, corresponding_char);
 			result = chars.get(key);
@@ -241,16 +427,15 @@ struct GL_TEXT {
 
 
 struct GL_WINDOW {
-	HDC      hDC, htextDC;
-	HWND     hwnd;
-	HGLRC    hRC;
-	HFONT    hfont;
-	int32_t  window_size_x, window_size_y;
-	uint8_t  current_dimension;
-	uint8_t  mouse_key_state;
-	POINT    mouse_down_pos, mouse_current_pos;
-	uint32_t update_interval;
-	bool     only2D;
+	HDC     hDC, htextDC;
+	HWND    hwnd;
+	HGLRC   hRC;
+	HFONT   hfont;
+	int32_t window_size_x, window_size_y;
+	uint8_t current_dimension;
+	uint8_t mouse_key_state;
+	POINT   mouse_down_pos, mouse_current_pos;
+	bool    only2D;
 	// @3D
 	float3D    camera3D_orbit_target, camera3D_orbit_target_backup;
     float      camera3D_orbit_distance, camera3D_orbit_pan_sensitivity, camera3D_orbit_pan_distance_factor;
@@ -263,10 +448,6 @@ struct GL_WINDOW {
 		MOUSE_LEFT_DOWN = 0x01, MOUSE_RIGHT_DOWN = 0x02, MOUSE_ACTION_LEFT_DOWN = 0x04, MOUSE_ACTION_RIGHT_DOWN = 0x08,
 		MOUSE_ACTION_LEFT_UP = 0x10, MOUSE_ACTION_RIGHT_UP = 0x20, MOUSE_ACTION_MOVE = 0x40, MOUSE_VALID_DOWN_POS = 0x80;
 	static constexpr UINT MESSAGE_RENDER = WM_USER + 1;
-	static constexpr uint32_t FPS_LAZY = 1.f;
-	typedef void (*FRAME_RENDERER)(GL_WINDOW*, void*);
-	FRAME_RENDERER frame_render_proc;
-	void*          additional_render_info;
 	static constexpr PIXELFORMATDESCRIPTOR _create_PFD() {
 		PIXELFORMATDESCRIPTOR PFD = { 0 };
     	PFD.nSize = sizeof(PFD);
@@ -315,7 +496,7 @@ struct GL_WINDOW {
 				break;
 			} case WM_SIZE: {
         		if (wparam == SIZE_RESTORED || wparam == SIZE_MAXIMIZED || wparam == SIZE_MINIMIZED)
-					resize(LOWORD(lparam), HIWORD(lparam), false);
+					resize(LOWORD(lparam), HIWORD(lparam), 0);
 				break;
 			} case MESSAGE_RENDER: render_frame(); break;
         	default: return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -419,8 +600,7 @@ struct GL_WINDOW {
 		camera3D_orbit_orientation_backup = camera3D_orbit_orientation;
 	}
 	GL_WINDOW(int32_t _size_x, int32_t _size_y, bool _only2D = false, bool use_default_parameters = true):
-			window_size_x(_size_x), window_size_y(_size_y), current_dimension(0), update_interval(16), only2D(_only2D),
-			frame_render_proc(nullptr), additional_render_info(nullptr) {
+			window_size_x(_size_x), window_size_y(_size_y), current_dimension(0), only2D(_only2D) {
 		_create_window();
 		PIXELFORMATDESCRIPTOR PFD = _create_PFD();
 		int32_t formatID = ChoosePixelFormat(hDC, &PFD);
@@ -433,13 +613,13 @@ struct GL_WINDOW {
 			wglMakeCurrent(nullptr, nullptr);
 			wglDeleteContext(tempRC);
 			int attribs[] = {
-    			0x2091, 3, // WGL_CONTEXT_MAJOR_VERSION_ARB
-    			0x2092, 3, // WGL_CONTEXT_MINOR_VERSION_ARB
+    			0x2091, 2, // WGL_CONTEXT_MAJOR_VERSION_ARB
+    			0x2092, 1, // WGL_CONTEXT_MINOR_VERSION_ARB
     			0x9126,    // WGL_CONTEXT_PROFILE_MASK_ARB
     			0x0002,    // WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
     			0
 			};
-			hRC = WGLCCAARB(hDC, NULL, attribs);
+			hRC = WGLCCAARB(hDC, 0, attribs);
 			wglMakeCurrent(hDC, hRC);
 		} else hRC = tempRC;
 		if (use_default_parameters) _set_camera3D_to_default();
@@ -454,7 +634,7 @@ struct GL_WINDOW {
     	switch_dimension(only2D ? 2 : 3);
     	glMatrixMode(GL_MODELVIEW);
     	glLoadIdentity();
-    	glClearColor(.1f, .1f, .1f, 1.f);
+    	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		_init_font();
 	}
 	~GL_WINDOW() {
@@ -476,10 +656,12 @@ struct GL_WINDOW {
 	void resize(int32_t _size_x, int32_t _size_y, bool isproactive) {
 		if (isproactive) SetWindowPos(hwnd, NULL, 0, 0, _size_x, _size_y, SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER);
 		glViewport(0, 0, _size_x, _size_y);
-    	window_size_x = _size_x; window_size_y = _size_y;
-    	uint8_t current_dimension_copy = current_dimension;
-    	current_dimension = 0;
-		switch_dimension(current_dimension_copy); // Flush viewport!
+    	glMatrixMode(GL_PROJECTION);
+    	glLoadIdentity();
+    	double aspect = (double)_size_x / (double)_size_y;
+    	glFrustum(-aspect, aspect, -1., 1., camera3D_vision_near, camera3D_vision_far);
+    	glMatrixMode(GL_MODELVIEW);
+		window_size_x = _size_x; window_size_y = _size_y;
 	}
 	void switch_dimension(uint8_t dimension) {
 		if (dimension == current_dimension) return;
@@ -527,7 +709,7 @@ struct GL_WINDOW {
         	} else {
         	    SendMessage(hwnd, MESSAGE_RENDER, 0, 0); // render_frame();
         	    charset.count_frame();
-        	    Sleep(update_interval);
+        	    Sleep(16);
         	}
     	}
     	timeEndPeriod(1);
@@ -537,13 +719,44 @@ struct GL_WINDOW {
     	ReleaseDC(hwnd, hDC);
     	return msg.wParam;
 	}
-	inline void set_render_proc(FRAME_RENDERER _frame_render_proc) { frame_render_proc = _frame_render_proc; }
-	inline void set_additional_render_info(void* _additional_render_info) { additional_render_info = _additional_render_info; }
-	inline void set_FPS(float FPS) { update_interval = uint32_t(1000.f / FPS); }
 	void render_frame() {
-		if (frame_render_proc != nullptr) frame_render_proc(this, additional_render_info);
-		else MessageBox(NULL, L"Null renderer proc!", L"ERROR", MB_ICONERROR | MB_OK);
+		if (only2D) glClear(GL_COLOR_BUFFER_BIT);
+		else glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		switch_dimension(2);
+		RECT text_range = RECT{ 20, 10, 120, 70 };
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glColor3ub(255, 255, 255);
+		if (frame_info.frame_counter > 100) {
+			glEnable(GL_TEXTURE_2D);
+			frame_info.text_replace->draw(POINT{ text_range.left, text_range.top }, frame_info.charset, htextDC);
+			glDisable(GL_TEXTURE_2D);
+		} else {
+			if (frame_info.frame_counter == 100) frame_info.text_replace = new GL_TEXT(L"A\nBC\nDEF", htextDC);
+			else if (frame_info.frame_counter > 50) {
+				glEnable(GL_TEXTURE_2D);
+				frame_info.text->draw(POINT{ text_range.left, text_range.top }, frame_info.charset, htextDC);
+				glDisable(GL_TEXTURE_2D);
+			} else if (frame_info.frame_counter == 50) frame_info.text = new GL_TEXT(L"ABCDEFGH", htextDC);
+			frame_info.frame_counter++;
+		}
+		glLineWidth(.5f);
+        glBegin(GL_LINE_LOOP);
+        	glColor3ub(255, 255, 000);
+        	glVertex2i(text_range.left , text_range.top);
+        	glVertex2i(text_range.right, text_range.top);
+        	glVertex2i(text_range.right, text_range.bottom);
+        	glVertex2i(text_range.left , text_range.bottom);
+    	glEnd();
+		mouse_key_state &= ~(MOUSE_ACTION_LEFT_DOWN | MOUSE_ACTION_RIGHT_DOWN | MOUSE_ACTION_LEFT_UP | MOUSE_ACTION_RIGHT_UP | MOUSE_ACTION_MOVE);
+        glFlush();
+    	SwapBuffers(hDC);
 	}
-	inline void update() { SendMessage(hwnd, MESSAGE_RENDER, 0, 0); }
 };
 
+int main() {
+	DWORD PID = GetCurrentProcessId(), tick = GetTickCount();
+    srand(PID ^ tick);
+	GL_WINDOW top(400, 300, 1);
+	top.mainloop();
+	return 0;
+}

@@ -315,7 +315,7 @@ struct GL_WINDOW {
 				break;
 			} case WM_SIZE: {
         		if (wparam == SIZE_RESTORED || wparam == SIZE_MAXIMIZED || wparam == SIZE_MINIMIZED)
-					resize(LOWORD(lparam), HIWORD(lparam), false);
+					resize(LOWORD(lparam), HIWORD(lparam), 0);
 				break;
 			} case MESSAGE_RENDER: render_frame(); break;
         	default: return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -439,7 +439,7 @@ struct GL_WINDOW {
     			0x0002,    // WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
     			0
 			};
-			hRC = WGLCCAARB(hDC, NULL, attribs);
+			hRC = WGLCCAARB(hDC, 0, attribs);
 			wglMakeCurrent(hDC, hRC);
 		} else hRC = tempRC;
 		if (use_default_parameters) _set_camera3D_to_default();
@@ -476,10 +476,12 @@ struct GL_WINDOW {
 	void resize(int32_t _size_x, int32_t _size_y, bool isproactive) {
 		if (isproactive) SetWindowPos(hwnd, NULL, 0, 0, _size_x, _size_y, SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER);
 		glViewport(0, 0, _size_x, _size_y);
-    	window_size_x = _size_x; window_size_y = _size_y;
-    	uint8_t current_dimension_copy = current_dimension;
-    	current_dimension = 0;
-		switch_dimension(current_dimension_copy); // Flush viewport!
+    	glMatrixMode(GL_PROJECTION);
+    	glLoadIdentity();
+    	double aspect = (double)_size_x / (double)_size_y;
+    	glFrustum(-aspect, aspect, -1., 1., camera3D_vision_near, camera3D_vision_far);
+    	glMatrixMode(GL_MODELVIEW);
+		window_size_x = _size_x; window_size_y = _size_y;
 	}
 	void switch_dimension(uint8_t dimension) {
 		if (dimension == current_dimension) return;
@@ -527,7 +529,7 @@ struct GL_WINDOW {
         	} else {
         	    SendMessage(hwnd, MESSAGE_RENDER, 0, 0); // render_frame();
         	    charset.count_frame();
-        	    Sleep(update_interval);
+        	    Sleep(16);
         	}
     	}
     	timeEndPeriod(1);
@@ -545,5 +547,37 @@ struct GL_WINDOW {
 		else MessageBox(NULL, L"Null renderer proc!", L"ERROR", MB_ICONERROR | MB_OK);
 	}
 	inline void update() { SendMessage(hwnd, MESSAGE_RENDER, 0, 0); }
+    static void render_frame_demo(GL_WINDOW* root, void* ) {
+		if (root->only2D) glClear(GL_COLOR_BUFFER_BIT);
+		else glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		root->switch_dimension(2);
+		RECT text_range = RECT{ 20, 10, 120, 70 };
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glColor3ub(255, 255, 255);
+		if (root->frame_info.frame_counter > 100) {
+			glEnable(GL_TEXTURE_2D);
+			root->frame_info.text_replace->draw(POINT{ text_range.left, text_range.top }, root->frame_info.charset, root->htextDC);
+			glDisable(GL_TEXTURE_2D);
+		} else {
+			if (root->frame_info.frame_counter == 100) root->frame_info.text_replace = new GL_TEXT(L"A\nBC\nDEF", root->htextDC);
+			else if (root->frame_info.frame_counter > 50) {
+				glEnable(GL_TEXTURE_2D);
+				root->frame_info.text->draw(POINT{ text_range.left, text_range.top }, root->frame_info.charset, root->htextDC);
+				glDisable(GL_TEXTURE_2D);
+			} else if (root->frame_info.frame_counter == 50) root->frame_info.text = new GL_TEXT(L"ABCDEFGH", root->htextDC);
+			root->frame_info.frame_counter++;
+		}
+		glLineWidth(.5f);
+        glBegin(GL_LINE_LOOP);
+        	glColor3ub(255, 255, 000);
+        	glVertex2i(text_range.left , text_range.top);
+        	glVertex2i(text_range.right, text_range.top);
+        	glVertex2i(text_range.right, text_range.bottom);
+        	glVertex2i(text_range.left , text_range.bottom);
+    	glEnd();
+		root->mouse_key_state &= ~(MOUSE_ACTION_LEFT_DOWN | MOUSE_ACTION_RIGHT_DOWN | MOUSE_ACTION_LEFT_UP | MOUSE_ACTION_RIGHT_UP | MOUSE_ACTION_MOVE);
+        glFlush();
+    	SwapBuffers(root->hDC);
+	}
 };
 
