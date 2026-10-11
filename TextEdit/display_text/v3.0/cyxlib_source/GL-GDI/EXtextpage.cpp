@@ -1,40 +1,4 @@
-#ifndef _WINDOWS_
-	#define WIN32_LEAN_AND_MEAN
-	#define NOMINMAX
-    #define UNICODE
-	#include <windows.h>
-#endif
-#include <mmsystem.h>
-#include <gl/gl.h>
-#include <gl/glu.h>
-#include <stdint.h>
-
 bool operator==(const POINT& p1, const POINT& p2) { return (p1.x == p2.x) && (p1.y == p2.y); }
-#include "cyxlib_source/data-structs.cpp"
-#include "cyxlib_source/non-crt-math.cpp"
-#include "cyxlib_source/GL-GDI.cpp"
-#include "cyxlib_source/IO.cpp"
-#include <stdio.h>
-
-#pragma comment(lib, "kernel32.lib")
-#pragma comment(lib, "user32.lib")
-#pragma comment(lib, "gdi32.lib")
-#pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glu32.lib")
-#pragma comment(lib, "winmm.lib")
-
-
-GLuint create_empty_texture(SIZE size, GLenum format = GL_BGRA_EXT) {
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-    glTexImage2D(GL_TEXTURE_2D, 0, format, size.cx, size.cy, 0, format, GL_UNSIGNED_BYTE, nullptr);
-	return textureID;
-}
 
 struct FONT_CONTEXT {
 	HDC     htextDC;
@@ -152,7 +116,9 @@ struct CHARPAGE {
 	GLuint    textureID;
 	CHARPAGE *neighbor_x, *neighbor_y;
 	static constexpr size_t HEAP_TIPPING_POINT = 16384ULL;
-	CHARPAGE(SIZE _size): neighbor_x(nullptr), neighbor_y(nullptr) { textureID = create_empty_texture(_size, GL_LUMINANCE_ALPHA); }
+	CHARPAGE(SIZE _size): neighbor_x(nullptr), neighbor_y(nullptr) {
+		textureID = create_texture(_size, GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, nullptr);
+	}
 	~CHARPAGE() { glDeleteTextures(1, &textureID); }
 	void writeline(const WRITE_INFO* write_info, POINT page_offset = POINT{ 0, 0 }) {
 		POINT source_from, source_displacement, dest_offset;
@@ -273,84 +239,3 @@ struct CHARPAGE {
 	}
 };
 
-
-struct TEST_PROC_PARAMS {
-	CHARPAGE::WRITE_INFO* write_info;
-	POINT                 offset = POINT{ 0, 0 };
-};
-void test_proc(GL_WINDOW* root, void* params) {
-	GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR) {
-    	printf("GL error before clear: 0x%04X\n", err);
-    	Sleep(1000);
-	}
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	root->switch_dimension(2);
-	glEnable(GL_TEXTURE_2D); glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glEnable(GL_BLEND);      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	
-	TEST_PROC_PARAMS& params_ref = *(TEST_PROC_PARAMS*)params;
-    CHARPAGE::render(params_ref.offset, params_ref.write_info, SIZE{ root->window_size_x, root->window_size_y });
-    params_ref.offset.x -= 1;
-    params_ref.offset.y += 1;
-
-    glDisable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glFlush();
-    SwapBuffers(root->hDC);
-}
-
-int main() {
-	DWORD PID = GetCurrentProcessId(), tick = GetTickCount();
-    srand(PID ^ tick);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    GL_WINDOW top(400, 300, true, true);
-    top.set_FPS(30.f);
-
-    LOGFONT LF = GL_WINDOW::_create_default_logfont();
-    HFONT hfont = CreateFontIndirectW(&LF);
-    FONT_CONTEXT font_context;
-    font_context.setfont(hfont);
-
-    SIZE page_size = SIZE{ 64, 64 };
-    /* [0]--[1]--[2]--[\]
-	 *  |    |    |
-	 * [3]--[4]--[5]--[\]
-	 *  |    |    |
-	 * [\]  [\]  [\]
-    */
-
-    CHARPAGE::WRITE_INFO write_info;
-	wchar_t text0[] = L"Very long string......";
-    write_info.text = text0;
-    write_info.context = &font_context;
-    write_info.page_size = page_size;
-    write_info.base_dest_offset = POINT{ 10, 5 };
-    write_info.hheap = NULL;
-    write_info.hfont = hfont;
-    write_info.create_index();
-    for (int32_t x = 0; x < 4; x++) for (int32_t y = 0; y < 3; y++) write_info.add_page(POINT{ x, y });
-	CHARPAGE* root_page = *(write_info.pages->get(POINT{ 0, 0 }));
-
-    root_page->writeline(&write_info);
-
-	wchar_t text1[] = L"......String very long";
-	write_info.text = text1;
-	write_info.base_dest_offset = POINT{ 10, 55 };
-    root_page->writeline(&write_info);
-
-    wchar_t text2[] = L"QWERTYUIOPASDFGHJKLZXCVBNM";
-    write_info.text = text2;
-    write_info.base_dest_offset = POINT{ 70, 75 };
-    root_page->writeline(&write_info);
-
-	// top.set_render_proc(GL_WINDOW::render_frame_demo);
-	top.set_render_proc(test_proc);
-	TEST_PROC_PARAMS params;
-	params.write_info = &write_info;
-	top.set_additional_render_info(&params);
-	top.mainloop();
-
-	DeleteObject(hfont);
-	return 0;
-}

@@ -22,7 +22,6 @@ const double LOG10E_D  = 0.43429448190325182765;
 const float  MATH_E    = 2.71828182845904523536f;
 const float  MATH_E_D  = 2.71828182845904523536;
 
-
 const float  EXP_MAX   = 86.f;
 const double EXP_PAX_D = 700.;
 #ifdef __NCM_FAST
@@ -116,7 +115,7 @@ NCM_API float csc(float x) {
 	return 1.f / s;
 }
 NCM_API float sec(float x) {
-	float c = cos(c);
+	float c = cos(x);
 	if (fabs(c) < ERR) return (c > 0.f) ? INF : -INF;
 	return 1.f / c;
 }
@@ -187,11 +186,9 @@ inline float hardware_sqrt(float x) {
     	);
 	#else
 		result = pow(x, .5f);
-		#warning "SSE not required! Fallback to software sqrt."
 	#endif
     return result;
 }
-
 
 #ifndef _NCM_NO_PACKING
 }

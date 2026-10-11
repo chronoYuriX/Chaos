@@ -2,6 +2,7 @@
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     	case WM_CREATE: {
@@ -18,7 +19,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			rc.bottom = 50;
 			FillRect(hdc, &rc, hBrush);
 			DeleteObject(hBrush);
-			EndPaint(hwnd, &ps);return 0;
+			EndPaint(hwnd, &ps);
+			return 0;
     	} case WM_DESTROY: PostQuitMessage(0); return 0;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);

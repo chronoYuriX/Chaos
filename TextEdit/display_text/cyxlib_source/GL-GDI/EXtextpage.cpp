@@ -1,40 +1,4 @@
-#ifndef _WINDOWS_
-	#define WIN32_LEAN_AND_MEAN
-	#define NOMINMAX
-    #define UNICODE
-	#include <windows.h>
-#endif
-#include <mmsystem.h>
-#include <gl/gl.h>
-#include <gl/glu.h>
-#include <stdint.h>
-
 bool operator==(const POINT& p1, const POINT& p2) { return (p1.x == p2.x) && (p1.y == p2.y); }
-#include "cyxlib_source/data-structs.cpp"
-#include "cyxlib_source/non-crt-math.cpp"
-#include "cyxlib_source/GL-GDI.cpp"
-#include "cyxlib_source/IO.cpp"
-#include <stdio.h>
-
-#pragma comment(lib, "kernel32.lib")
-#pragma comment(lib, "user32.lib")
-#pragma comment(lib, "gdi32.lib")
-#pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glu32.lib")
-#pragma comment(lib, "winmm.lib")
-
-
-GLuint create_empty_texture(SIZE size, GLenum format = GL_BGRA_EXT) {
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-    glTexImage2D(GL_TEXTURE_2D, 0, format, size.cx, size.cy, 0, format, GL_UNSIGNED_BYTE, nullptr);
-	return textureID;
-}
 
 struct FONT_CONTEXT {
 	HDC     htextDC;
@@ -97,6 +61,7 @@ struct CHARPAGE {
 		HANDLE                  hheap;
 		HFONT                   hfont;
 		DICT<POINT, CHARPAGE*>* pages;
+		COLORREF                color;
 		WRITE_INFO(): pages(nullptr) { }
 		~WRITE_INFO() {
 			if (pages != nullptr) {
@@ -110,11 +75,9 @@ struct CHARPAGE {
 		}
 		void create_index(HANDLE hheap = NULL) { pages = new DICT<POINT, CHARPAGE*>(0, 0.f, 0.f, hheap); }
 		void copy(const WRITE_INFO* another) {
-			text      = another->text;
-			context   = another->context;
-			page_size = another->page_size;
-			hheap     = another->hheap;
-			hfont     = another->hfont;
+			text      = another->text;      context = another->context;
+			page_size = another->page_size; hheap   = another->hheap;
+			hfont     = another->hfont;     color   = another->color;
 		}
 		void add_page(POINT page_location) {
 			CHARPAGE* root = new CHARPAGE(page_size);
@@ -152,7 +115,9 @@ struct CHARPAGE {
 	GLuint    textureID;
 	CHARPAGE *neighbor_x, *neighbor_y;
 	static constexpr size_t HEAP_TIPPING_POINT = 16384ULL;
-	CHARPAGE(SIZE _size): neighbor_x(nullptr), neighbor_y(nullptr) { textureID = create_empty_texture(_size, GL_LUMINANCE_ALPHA); }
+	CHARPAGE(SIZE _size): neighbor_x(nullptr), neighbor_y(nullptr) {
+		textureID = create_texture(_size, GL_RGBA, GL_RGBA, nullptr);
+	}
 	~CHARPAGE() { glDeleteTextures(1, &textureID); }
 	void writeline(const WRITE_INFO* write_info, POINT page_offset = POINT{ 0, 0 }) {
 		POINT source_from, source_displacement, dest_offset;
@@ -218,24 +183,26 @@ struct CHARPAGE {
 			}
 		}
     	bool use_heap = size_t(write_info->context->last_text_size.cx) * write_info->context->last_text_size.cy > HEAP_TIPPING_POINT;
-    	size_t R8size = size_t(source_displacement.y) * source_displacement.x * 2;
-    	BYTE* R8data;
-    	if (use_heap) R8data = (BYTE*)HeapAlloc((write_info->hheap == NULL) ? GetProcessHeap() : write_info->hheap, 0, R8size);
-    	else R8data = (BYTE*)__builtin_alloca(R8size);
+    	size_t subimage_size = size_t(source_displacement.y) * source_displacement.x * 4;
+    	BYTE* subimage_data;
+    	if (use_heap) subimage_data = (BYTE*)HeapAlloc((write_info->hheap == NULL) ? GetProcessHeap() : write_info->hheap, 0, subimage_size);
+    	else subimage_data = (BYTE*)__builtin_alloca(subimage_size);
 	    size_t R8data_counter = 0;
 	    POINT source_to = POINT{ source_from.x + source_displacement.x, source_from.y + source_displacement.y };
 	    for (int32_t y = source_from.y; y < source_to.y; y++) {
 	        size_t line_offset = y * write_info->context->BMPsize.cx * 4;
 	        for (int32_t x = source_from.x; x < source_to.x; x++) {
-        		R8data[R8data_counter++] = 255; // L
-        		R8data[R8data_counter++] = write_info->context->BMPdata[line_offset + x * 4]; // A
+        		subimage_data[R8data_counter++] = GetRValue(write_info->color); // R
+        		subimage_data[R8data_counter++] = GetGValue(write_info->color); // G
+        		subimage_data[R8data_counter++] = GetBValue(write_info->color); // B
+        		subimage_data[R8data_counter++] = write_info->context->BMPdata[line_offset + x * 4]; // A
 			}
 	    }
 	    glBindTexture(GL_TEXTURE_2D, textureID);
 	    glTexSubImage2D(
 			GL_TEXTURE_2D, 0, dest_offset.x, dest_offset.y, source_displacement.x, source_displacement.y,
-			GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, R8data);
-	    if (use_heap) HeapFree((write_info->hheap == NULL) ? GetProcessHeap() : write_info->hheap, 0, R8data);
+			GL_RGBA, GL_UNSIGNED_BYTE, subimage_data);
+	    if (use_heap) HeapFree((write_info->hheap == NULL) ? GetProcessHeap() : write_info->hheap, 0, subimage_data);
 	}
 	void writeline_auto(const WRITE_INFO* write_info, int32_t line_number, int32_t x_offset) {
 		writeline(write_info, POINT{ x_offset, write_info->context->get_line_height() * line_number });
@@ -244,11 +211,6 @@ struct CHARPAGE {
 		if (destination.x < window_size.cx && destination.y < window_size.cy) {
 			POINT next_destination = POINT{ destination.x + page_size.cx, destination.y + page_size.cy };
 			glBindTexture(GL_TEXTURE_2D, textureID);
-
-			COLORREF randcolor = gradientRGB((uint16_t)rand());
-			glColor4ub(GetRValue(randcolor), GetGValue(randcolor), GetBValue(randcolor), 255);
-
-			// glColor4ub(255, 255, 255, 255); // Text color
 			glBegin(GL_QUADS);
 				glTexCoord2f(0.f, 0.f); glVertex2i(     destination.x,      destination.y);
         		glTexCoord2f(1.f, 0.f); glVertex2i(next_destination.x,      destination.y);
@@ -268,89 +230,9 @@ struct CHARPAGE {
 			POINT actual_offset = POINT{
 				destination.x + write_info->page_size.cx * actual_root_page_location.x,
 				destination.y + write_info->page_size.cy * actual_root_page_location.y };
+			glColor4ub(255, 255, 255, 255);
 			(*actual_root)->render_chain(actual_offset, write_info->page_size, window_size, true);
 		}
 	}
 };
 
-
-struct TEST_PROC_PARAMS {
-	CHARPAGE::WRITE_INFO* write_info;
-	POINT                 offset = POINT{ 0, 0 };
-};
-void test_proc(GL_WINDOW* root, void* params) {
-	GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR) {
-    	printf("GL error before clear: 0x%04X\n", err);
-    	Sleep(1000);
-	}
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	root->switch_dimension(2);
-	glEnable(GL_TEXTURE_2D); glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glEnable(GL_BLEND);      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	
-	TEST_PROC_PARAMS& params_ref = *(TEST_PROC_PARAMS*)params;
-    CHARPAGE::render(params_ref.offset, params_ref.write_info, SIZE{ root->window_size_x, root->window_size_y });
-    params_ref.offset.x -= 1;
-    params_ref.offset.y += 1;
-
-    glDisable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glFlush();
-    SwapBuffers(root->hDC);
-}
-
-int main() {
-	DWORD PID = GetCurrentProcessId(), tick = GetTickCount();
-    srand(PID ^ tick);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    GL_WINDOW top(400, 300, true, true);
-    top.set_FPS(30.f);
-
-    LOGFONT LF = GL_WINDOW::_create_default_logfont();
-    HFONT hfont = CreateFontIndirectW(&LF);
-    FONT_CONTEXT font_context;
-    font_context.setfont(hfont);
-
-    SIZE page_size = SIZE{ 64, 64 };
-    /* [0]--[1]--[2]--[\]
-	 *  |    |    |
-	 * [3]--[4]--[5]--[\]
-	 *  |    |    |
-	 * [\]  [\]  [\]
-    */
-
-    CHARPAGE::WRITE_INFO write_info;
-	wchar_t text0[] = L"Very long string......";
-    write_info.text = text0;
-    write_info.context = &font_context;
-    write_info.page_size = page_size;
-    write_info.base_dest_offset = POINT{ 10, 5 };
-    write_info.hheap = NULL;
-    write_info.hfont = hfont;
-    write_info.create_index();
-    for (int32_t x = 0; x < 4; x++) for (int32_t y = 0; y < 3; y++) write_info.add_page(POINT{ x, y });
-	CHARPAGE* root_page = *(write_info.pages->get(POINT{ 0, 0 }));
-
-    root_page->writeline(&write_info);
-
-	wchar_t text1[] = L"......String very long";
-	write_info.text = text1;
-	write_info.base_dest_offset = POINT{ 10, 55 };
-    root_page->writeline(&write_info);
-
-    wchar_t text2[] = L"QWERTYUIOPASDFGHJKLZXCVBNM";
-    write_info.text = text2;
-    write_info.base_dest_offset = POINT{ 70, 75 };
-    root_page->writeline(&write_info);
-
-	// top.set_render_proc(GL_WINDOW::render_frame_demo);
-	top.set_render_proc(test_proc);
-	TEST_PROC_PARAMS params;
-	params.write_info = &write_info;
-	top.set_additional_render_info(&params);
-	top.mainloop();
-
-	DeleteObject(hfont);
-	return 0;
-}
