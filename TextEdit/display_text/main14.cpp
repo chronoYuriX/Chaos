@@ -110,19 +110,19 @@ int WINAPI WinMain(HINSTANCE hinstance, HINSTANCE, LPSTR, int ) {
     WNDCLASSW wndclass = { 0 };
     wndclass.lpfnWndProc   = shell_window_process;
     wndclass.hInstance     = hinstance;
-    wndclass.lpszClassName = L"CYX_SHELL_12";
+    wndclass.lpszClassName = L"CYX_SHELL_14";
     wndclass.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
     wndclass.hCursor       = LoadCursor(NULL, IDC_ARROW);
     wndclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     RegisterClassW(&wndclass);
     HWND hwnd = CreateWindowExW(
-		0, L"CYX_SHELL_12", L"Shell Window",
+		0, L"CYX_SHELL_14", L"Shell Window",
 		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hinstance, NULL);
 	// @subwindow
 	GRAPHIC_WINDOW::WINDOW_ATTRIBUTES window_attributes;
     window_attributes.set_default();
     window_attributes.window_size = SIZE{ 500, 300 };
-    window_attributes.window_classname_header = L"GRAPHICS_DEMO_12_";
+    window_attributes.window_classname_header = L"GRAPHICS_DEMO_14_";
     window_attributes.window_title = L"Demo";
     window_attributes.client_process = test_proc;
     window_attributes.window_style_basic = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;

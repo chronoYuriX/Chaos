@@ -187,15 +187,15 @@ struct CHARPAGE {
     	BYTE* subimage_data;
     	if (use_heap) subimage_data = (BYTE*)HeapAlloc((write_info->hheap == NULL) ? GetProcessHeap() : write_info->hheap, 0, subimage_size);
     	else subimage_data = (BYTE*)__builtin_alloca(subimage_size);
-	    size_t R8data_counter = 0;
+	    size_t subimage_data_counter = 0;
 	    POINT source_to = POINT{ source_from.x + source_displacement.x, source_from.y + source_displacement.y };
 	    for (int32_t y = source_from.y; y < source_to.y; y++) {
 	        size_t line_offset = y * write_info->context->BMPsize.cx * 4;
 	        for (int32_t x = source_from.x; x < source_to.x; x++) {
-        		subimage_data[R8data_counter++] = GetRValue(write_info->color); // R
-        		subimage_data[R8data_counter++] = GetGValue(write_info->color); // G
-        		subimage_data[R8data_counter++] = GetBValue(write_info->color); // B
-        		subimage_data[R8data_counter++] = write_info->context->BMPdata[line_offset + x * 4]; // A
+        		subimage_data[subimage_data_counter++] = GetRValue(write_info->color); // R
+        		subimage_data[subimage_data_counter++] = GetGValue(write_info->color); // G
+        		subimage_data[subimage_data_counter++] = GetBValue(write_info->color); // B
+        		subimage_data[subimage_data_counter++] = write_info->context->BMPdata[line_offset + x * 4]; // A
 			}
 	    }
 	    glBindTexture(GL_TEXTURE_2D, textureID);
