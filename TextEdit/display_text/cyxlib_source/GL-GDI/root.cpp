@@ -58,20 +58,6 @@ typedef struct float4D {
 	}
 } quaternion;
 
-constexpr COLORREF gradientRGB(uint16_t hue) {
-	hue %= 1536;
-	switch (HIBYTE(hue)) {
-		case 0: return RGB(              255,       LOBYTE(hue),               000);
-		case 1: return RGB(255 - LOBYTE(hue),               255,               000);
-		case 2: return RGB(              000,               255,       LOBYTE(hue));
-		case 3: return RGB(              000, 255 - LOBYTE(hue),               255);
-		case 4: return RGB(      LOBYTE(hue),               000,               255);
-		case 5: return RGB(              255,               000, 255 - LOBYTE(hue));
-	}
-	return (COLORREF)0;
-};
-constexpr COLORREF gradientRGB(float hue) { return gradientRGB(uint16_t(1536.f * hue)); }
-
 GLuint create_texture(SIZE size, GLenum source_format, GLenum internal_format, BYTE* image_data) {
 	GLuint textureID;
 	glGenTextures(1, &textureID);
@@ -142,14 +128,14 @@ struct TX_CHARSET {
 	TX_CHARSET(uint16_t _scan_cycle = 30, uint16_t _char_lifespan = 10): scan_counter(0), char_lifespan(_char_lifespan), chars(82) {
 		scan_cycle = (_char_lifespan == ETERNAL_LIFE) ? NEVER_SCAN : _scan_cycle;
 	}
-	static bool enum_deconstruct(DICT_ENTRY<wchar_t, TX_CHAR*>* current_entry, void* ) {
+	static bool enum_deconstruct(DICT<wchar_t, TX_CHAR*>::ENTRY* current_entry, void* ) {
 		delete current_entry->val;
 		return DICT<wchar_t, TX_CHAR*>::ENUM_CONTINUE;
 	}
-	static bool enum_age_increase(DICT_ENTRY<wchar_t, TX_CHAR*>* current_entry, void* plifespan) {
+	static bool enum_age_increase(DICT<wchar_t, TX_CHAR*>::ENTRY* current_entry, void* plifespan) {
 		if (++current_entry->val->age >= *(uint16_t*)plifespan) {
 			delete current_entry->val;
-			current_entry->state = DICT_ENTRY<wchar_t, TX_CHAR*>::DELETED;
+			current_entry->state = DICT<wchar_t, TX_CHAR*>::ENTRY::DELETED;
 		}
 		return DICT<wchar_t, TX_CHAR*>::ENUM_CONTINUE;
 	}

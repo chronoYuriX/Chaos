@@ -61,11 +61,11 @@ struct CHARPAGE {
 		HANDLE                  hheap;
 		HFONT                   hfont;
 		DICT<POINT, CHARPAGE*>* pages;
-		COLORREF                color;
+		COLORREF                font_color, background_color;
 		WRITE_INFO(): pages(nullptr) { }
 		~WRITE_INFO() {
 			if (pages != nullptr) {
-				pages->enum_entries([](DICT_ENTRY<POINT, CHARPAGE*>* entry, void* ) -> bool {
+				pages->enum_entries([](DICT<POINT, CHARPAGE*>::ENTRY* entry, void* ) -> bool {
         				delete entry->val;
         				return DICT<POINT, CHARPAGE*>::ENUM_CONTINUE;
     				}, nullptr);
@@ -75,9 +75,9 @@ struct CHARPAGE {
 		}
 		void create_index(HANDLE hheap = NULL) { pages = new DICT<POINT, CHARPAGE*>(0, 0.f, 0.f, hheap); }
 		void copy(const WRITE_INFO* another) {
-			text      = another->text;      context = another->context;
-			page_size = another->page_size; hheap   = another->hheap;
-			hfont     = another->hfont;     color   = another->color;
+			memcpy(this, another, sizeof(WRITE_INFO));
+			base_dest_offset = POINT{ 0, 0 };
+			pages = nullptr;
 		}
 		void add_page(POINT page_location) {
 			CHARPAGE* root = new CHARPAGE(page_size);
@@ -189,13 +189,25 @@ struct CHARPAGE {
     	else subimage_data = (BYTE*)__builtin_alloca(subimage_size);
 	    size_t subimage_data_counter = 0;
 	    POINT source_to = POINT{ source_from.x + source_displacement.x, source_from.y + source_displacement.y };
+	    COLORREF true_background_color = write_info->background_color;
+	    COLORREF_set_alpha(&true_background_color, 255);
 	    for (int32_t y = source_from.y; y < source_to.y; y++) {
 	        size_t line_offset = y * write_info->context->BMPsize.cx * 4;
 	        for (int32_t x = source_from.x; x < source_to.x; x++) {
-        		subimage_data[subimage_data_counter++] = GetRValue(write_info->color); // R
-        		subimage_data[subimage_data_counter++] = GetGValue(write_info->color); // G
-        		subimage_data[subimage_data_counter++] = GetBValue(write_info->color); // B
+	        	size_t pixel_offset = line_offset + x * 4;
+	        	/*
+	        	blendRGB_format<GL_RGBA>(
+					subimage_data + subimage_data_counter, true_background_color, write_info->font_color,
+					*(COLORREF*)(write_info->context->BMPdata + pixel_offset));
+	        	subimage_data_counter += 4;
+	        	//subimage_data[subimage_data_counter++] =
+	        	*/
+
+        		subimage_data[subimage_data_counter++] = GetRValue(write_info->font_color);// * write_info->context->BMPdata[pixel_offset + 3]; // R
+        		subimage_data[subimage_data_counter++] = GetGValue(write_info->font_color); // G
+        		subimage_data[subimage_data_counter++] = GetBValue(write_info->font_color); // B
         		subimage_data[subimage_data_counter++] = write_info->context->BMPdata[line_offset + x * 4]; // A
+
 			}
 	    }
 	    glBindTexture(GL_TEXTURE_2D, textureID);
