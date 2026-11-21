@@ -1,0 +1,4 @@
+﻿namespace UTF8 {
+	constexpr wchar_t
+		filename_format[] = L"%ls\\record-%d-%02d-%02d｜%02d：%02d：%02d·%03d｜%d §%04u.txt";
+}

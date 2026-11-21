@@ -1,10 +1,87 @@
+#ifdef _DEBUG
+	#define DS_POISON_PTR(p) (p = reinterpret_cast<decltype(p)>(0xCDCDCDCD))
+#else
+	#define DS_POISON_PTR(p)
+#endif
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define UNICODE
 #include <windows.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <setjmp.h>
 
+
+struct DS_CONTEXT {
+	typedef uint16_t ERROR_CODE;
+	static constexpr ERROR_CODE
+		CONTEXT_NO_ERROR          = 0x0000, CONTEXT_REACHED_MAX_DEPTH = 0x0001, CONTEXT_OVERPOPPED = 0x0002, CONTEXT_UNDEFINED_ERROR = 0x0FFF,
+		MEM_HEAP_ALLOCATION_ERROR = 0x1001;
+	struct CHAIN_LINK {
+		void*          structure;
+		const wchar_t* location_description;
+	};
+	CHAIN_LINK* call_chain;
+	ERROR_CODE  last_error_code;
+	wchar_t*    last_error_description;
+	size_t      max_depth, current_depth, max_error_description;
+	HANDLE      h_heap;
+	DS_CONTEXT(size_t _max_depth, size_t _max_error_description, HANDLE _h_heap = nullptr):
+			max_depth(_max_depth), current_depth(0), max_error_description(_max_error_description) {
+		h_heap = (_h_heap == nullptr) ? GetProcessHeap() : _h_heap;
+		call_chain             = (CHAIN_LINK*)HeapAlloc(h_heap, 0, sizeof(CHAIN_LINK) * max_depth);
+		last_error_description =    (wchar_t*)HeapAlloc(h_heap, 0, sizeof(wchar_t)    * max_error_description);
+		if (call_chain == nullptr || last_error_description == nullptr) {
+			try_HeapFree(h_heap, 0, call_chain);
+			try_HeapFree(h_heap, 0, last_error_description);
+			report_error(L"Failed to allocate heap memory!", MEM_HEAP_ALLOCATION_ERROR);
+		}
+	}
+	~DS_CONTEXT() {
+		try_HeapFree(h_heap, 0, call_chain);
+		try_HeapFree(h_heap, 0, last_error_description);
+	}
+	static inline WINAPI WINBOOL try_HeapFree(HANDLE h_heap, DWORD flags, void* p_mem) {
+		if (p_mem != nullptr) return HeapFree(h_heap, flags, p_mem);
+		return (WINBOOL)0;
+	}
+	void push(void* structure, const wchar_t* location_description) {
+		if (current_depth < max_depth) {
+			CHAIN_LINK current_link;
+			current_link.structure            = structure;
+			current_link.location_description = location_description;
+			call_chain[current_depth++] = current_link;
+		} else report_error(L"Context reached max depth!", CONTEXT_REACHED_MAX_DEPTH);
+	}
+	void pop(size_t depth = 1) {
+		if (current_depth >= depth) current_depth -= depth;
+		else report_error(L"Context overpopped!", CONTEXT_OVERPOPPED);
+	}
+	void report_error(const wchar_t* error_description, ERROR_CODE error_code) {
+		const wchar_t STRING_REPORT_OVERFLOW[] = L"\\:Error report overflow!";
+		last_error_code = error_code;
+		size_t length = 0;
+		for (size_t i = 0; i < current_depth; i++) {
+			size_t new_length = length + wcslen(call_chain[i].location_description) + 1;
+			if (new_length >= max_error_description) {
+				wcscpy(last_error_description, STRING_REPORT_OVERFLOW);
+				break;
+			}
+			last_error_description[length] = L'\\';
+			length += 1;
+			wcscpy(last_error_description + length, call_chain[i].location_description);
+			length = new_length;
+		}
+		size_t new_length = length + wcslen(error_description) + 2;
+		if (new_length >= max_error_description) wcscpy(last_error_description, STRING_REPORT_OVERFLOW);
+		else {
+			wcscpy(last_error_description + length, L": ");
+			wcscpy(last_error_description + length + 2, error_description);
+			last_error_description[new_length] = L'\0';
+		}
+	}
+};
 
 uint64_t FNVhash(const uint8_t* key_bytes, size_t key_length) {
 	uint64_t result = 14695981039346656037ULL;
@@ -20,18 +97,20 @@ typedef struct STANDARD_CONTAINER_CONSTRUCTOR {
 	size_t initial_size;
 	float  expansion;
 	HANDLE h_heap;
-	STANDARD_CONTAINER_CONSTRUCTOR(): h_heap(NULL) { }
+	STANDARD_CONTAINER_CONSTRUCTOR(): h_heap(nullptr) { }
 } SCC;
 
 template <typename TYPE_ELEMENT>
 struct LIST {
+	static constexpr wchar_t root_description[] = L"LIST";
 	TYPE_ELEMENT* elements;
 	size_t        storage_counter, max_storage;
 	float         expansion;
 	HANDLE        h_heap;
 	static constexpr float  DEFAULT_EXPANSION = 1.5f;
 	static constexpr size_t DEFAULT_STORAGE = 64;
-	LIST(SCC* p_constructor) {
+	LIST(SCC* p_constructor, DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"CONSTRUCTOR";
 		if (p_constructor == nullptr) {
 			max_storage = DEFAULT_STORAGE;
 			expansion   = DEFAULT_EXPANSION;
@@ -42,40 +121,68 @@ struct LIST {
 			h_heap      = (p_constructor->h_heap == nullptr) ?  GetProcessHeap() : p_constructor->h_heap;
 		}
 		elements = (TYPE_ELEMENT*)HeapAlloc(h_heap, 0, max_storage * sizeof(TYPE_ELEMENT));
+		if (elements == nullptr && context != nullptr) {
+			context->push(this, root_description);
+			context->push(&LIST<TYPE_ELEMENT>::LIST, func_description);
+			context->report_error(L"Failed to allocate main storage!", DS_CONTEXT::MEM_HEAP_ALLOCATION_ERROR);
+			context->pop(2);
+		}
 		cleanup();
 	}
 	~LIST() {
-		if (elements != nullptr) HeapFree(h_heap, 0, elements);
+		DS_CONTEXT::try_HeapFree(h_heap, 0, elements);
 		elements = nullptr;
 	}
-	void append_ptr(TYPE_ELEMENT* p_element) {
-		if (storage_counter == max_storage) expand();
+	void append_ptr(TYPE_ELEMENT* p_element, DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"append[ptr]";
+		if (context != nullptr) context->push(&LIST<TYPE_ELEMENT>::append_ptr, func_description);
+		if (storage_counter == max_storage) expand(context);
 		memcpy(elements + storage_counter, p_element, sizeof(TYPE_ELEMENT));
 		storage_counter++;
+		if (context != nullptr) context->pop();
 	}
-	inline void append(TYPE_ELEMENT element) { append_ptr(&element); }
-	void resize(size_t max_storage_new) {
+	inline void append(TYPE_ELEMENT element, DS_CONTEXT* context = nullptr) { append_ptr(&element, context); }
+	void resize(size_t max_storage_new, DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"resize";
 		if (max_storage_new != max_storage) {
 			max_storage = max_storage_new;
 			elements = (TYPE_ELEMENT*)HeapReAlloc(h_heap, 0, elements, max_storage * sizeof(TYPE_ELEMENT));
+			if (elements == nullptr && context != nullptr) {
+				context->push(&LIST<TYPE_ELEMENT>::resize, func_description);
+				context->report_error(L"Failed to resize main storage!", DS_CONTEXT::MEM_HEAP_ALLOCATION_ERROR);
+				context->pop();
+			}
 		}
 	}
-	void expand() {
+	void expand(DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"expand";
+		if (context != nullptr) context->push(&LIST<TYPE_ELEMENT>::expand, func_description);
 		size_t max_storage_new = max_storage * expansion;
 		if (max_storage_new == max_storage) max_storage_new++;
-		printf("Expand: %u -> %u\n", max_storage, max_storage_new);
 		resize(max_storage_new);
+		if (context != nullptr) context->pop();
 	}
-	void expand_to(size_t min_storage) {
+	void expand_to(size_t min_storage, DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"expand_to";
 		while (max_storage < min_storage) {
 			size_t max_storage_temp = max_storage * expansion;
 			if (max_storage_temp == max_storage) max_storage_temp++;
 			max_storage = max_storage_temp;
 		}
 		elements = (TYPE_ELEMENT*)HeapReAlloc(h_heap, 0, elements, max_storage * sizeof(TYPE_ELEMENT));
+		if (elements == nullptr && context != nullptr) {
+			context->push(&LIST<TYPE_ELEMENT>::expand_to, func_description);
+			context->report_error(L"Failed to expand main storage!", DS_CONTEXT::MEM_HEAP_ALLOCATION_ERROR);
+			context->pop();
+		}
 	}
 	inline void cleanup() { storage_counter = 0; }
-	inline void shrink() { resize(storage_counter); }
+	inline void shrink(DS_CONTEXT* context = nullptr) {
+		constexpr wchar_t func_description[] = L"shrink";
+		if (context != nullptr) context->push(&LIST<TYPE_ELEMENT>::shrink, func_description);
+		resize(storage_counter, context);
+		if (context != nullptr) context->pop();
+	}
 };
 
 template <typename TYPE_ELEMENT>
@@ -102,7 +209,7 @@ struct DICT {
 		TYPE_KEY key;
 		TYPE_VAL val;
 		uint8_t  state;
-		ENTRY* previous;
+		ENTRY*   previous;
 		static constexpr uint8_t FREE = 1, OCCUPIED = 2, DELETED = 3;
 	};
 	using ENUM_FUNC = bool (*)(ENTRY*, void*);
@@ -204,22 +311,49 @@ struct DICT {
 struct BUCKET_ALLOCATOR {
 	size_t bucket_size;
 	HANDLE h_heap;
-	BUCKET_ALLOCATOR(size_t _bucket_size, HANDLE _h_heap = NULL): bucket_size(_bucket_size),
-			(h_heap = (_h_heap == NULL) ? GetProcessHeap() : _h_heap) { }
+	BUCKET_ALLOCATOR(size_t _bucket_size, HANDLE _h_heap = nullptr): bucket_size(_bucket_size),
+			h_heap((_h_heap == nullptr) ? GetProcessHeap() : _h_heap) { }
 	inline void* alloc() { return HeapAlloc(h_heap, 0, bucket_size); }
 	inline void free(void* p_bucket) { HeapFree(h_heap, 0, p_bucket); }
 };
 
+template <typename TYPE_HANDLE>
 struct HANDLE_ALLOCER {
-	struct RANGE {
-		struct LINK { size_t bucketID, itemID; };
-		size_t left, right;
-		LINK   next_range;
+	struct BUCKET {
+		HANDLE_ALLOCER* root;
+		TYPE_HANDLE*    storage;
+		BUCKET*         previous;
+		/*
+		static void* operator new(size_t __reserved_size, HANDLE_ALLOCER* _root) {
+			void* mem = HeapAlloc(root->h_heap, 0, root->handles_per_bucket * sizeof(TYPE_HANDLE));
+			if (mem != nullptr) return mem;
+			root = _root;
+			storage = (TYPE_HANDLE*);
+		}*/
+		// static void
 	};
 	BUCKET_ALLOCATOR bucket_allocator;
+	size_t           handles_per_bucket;
+	BUCKET*          last_bucket;
+	HANDLE           h_heap;
+	HANDLE_ALLOCER(size_t _handles_per_bucket = 1024, HANDLE _h_heap = nullptr) {
+		last_bucket = new BUCKET;
+	}
 };
 
-
+int main() {
+	DS_CONTEXT context(1024, 1024);
+	context.push(nullptr, L"main");
+	context.push(nullptr, L"class01");
+	context.push(nullptr, L"func02");
+	context.push(nullptr, L"struct03");
+	context.report_error(L"Test error~", DS_CONTEXT::CONTEXT_NO_ERROR);
+	wprintf(L"%ls #%u\n", context.last_error_description, context.last_error_code);
+	context.pop();
+	context.report_error(L"Error test~", DS_CONTEXT::CONTEXT_NO_ERROR);
+	wprintf(L"%ls #%u\n", context.last_error_description, context.last_error_code);
+	return 0;
+}
 
 
 
